@@ -433,10 +433,6 @@ void paint_all(session_t *ps, struct managed_win *t, bool ignore_damage) {
 }
 
 bool init_render(session_t *ps) {
-	if (ps->o.backend == BKEND_DUMMY) {
-		return false;
-	}
-
 	// Initialize OpenGL as early as possible
 	glxext_init(ps->dpy, ps->scr);
 	if (bkend_use_glx(ps)) {

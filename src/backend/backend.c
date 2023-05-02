@@ -13,11 +13,9 @@
 #include "win.h"
 #include "x.h"
 
-extern struct backend_operations xrender_ops, dummy_ops;
 extern struct backend_operations glx_ops;
 
 struct backend_operations *backend_list[NUM_BKEND] = {
-    [BKEND_DUMMY] = &dummy_ops,
     [BKEND_GLX] = &glx_ops,
 };
 

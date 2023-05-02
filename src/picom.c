@@ -71,9 +71,7 @@ const char *const WINTYPES[NUM_WINTYPES] = {
 
 // clang-format off
 /// Names of backends.
-const char *const BACKEND_STRS[] = {[BKEND_GLX] = "glx",
-                                    [BKEND_DUMMY] = "dummy",
-                                    NULL};
+const char *const BACKEND_STRS[] = {[BKEND_GLX] = "glx", NULL};
 // clang-format on
 
 // === Global variables ===

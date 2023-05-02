@@ -28,7 +28,6 @@ typedef struct session session_t;
 /// @brief Possible backends
 enum backend {
 	BKEND_GLX,
-	BKEND_DUMMY,
 	NUM_BKEND,
 };
 

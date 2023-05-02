@@ -8,11 +8,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#ifdef CONFIG_OPENGL
 #include <GL/gl.h>
 #include "backend/gl/gl_common.h"
 #include "backend/gl/glx.h"
-#endif
 
 #include "compiler.h"
 #include "log.h"
@@ -328,7 +326,6 @@ struct log_target *stderr_logger_new(void) {
 	return &ret->tgt;
 }
 
-#ifdef CONFIG_OPENGL
 /// An opengl logger that can be used for logging into opengl debugging tools,
 /// such as apitrace
 struct gl_string_marker_logger {
@@ -366,11 +363,5 @@ struct log_target *gl_string_marker_logger_new(void) {
 	ret->gl_string_marker = fnptr;
 	return &ret->tgt;
 }
-
-#else
-struct log_target *gl_string_marker_logger_new(void) {
-	return NULL;
-}
-#endif
 
 // vim: set noet sw=8 ts=8:

@@ -27,31 +27,29 @@ typedef enum {
 	WMODE_SOLID,              // The window is opaque including the frame
 } winmode_t;
 
+// TODO(vinhowe): Clean this up
 /// Transition table:
 /// (DESTROYED is when the win struct is destroyed and freed)
 /// ('o' means in all other cases)
 /// (Window is created in the UNMAPPED state)
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |             |UNMAPPING|DESTROYING|MAPPING|FADING |UNMAPPED| MAPPED |DESTROYED|
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |  UNMAPPING  |    o    |  Window  |Window |  -    | Fading |  -     |    -    |
-/// |             |         |destroyed |mapped |       |finished|        |         |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |  DESTROYING |    -    |    o     |   -   |  -    |   -    |  -     | Fading  |
-/// |             |         |          |       |       |        |        |finished |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |   MAPPING   | Window  |  Window  |   o   |Opacity|   -    | Fading |    -    |
-/// |             |unmapped |destroyed |       |change |        |finished|         |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |    FADING   | Window  |  Window  |   -   |  o    |   -    | Fading |    -    |
-/// |             |unmapped |destroyed |       |       |        |finished|         |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |   UNMAPPED  |    -    |    -     |Window |  -    |   o    |   -    | Window  |
-/// |             |         |          |mapped |       |        |        |destroyed|
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
-/// |    MAPPED   | Window  |  Window  |   -   |Opacity|   -    |   o    |    -    |
-/// |             |unmapped |destroyed |       |change |        |        |         |
-/// +-------------+---------+----------+-------+-------+--------+--------+---------+
+/// +-------------+---------+----------+-------+--------+--------+---------+
+/// |             |UNMAPPING|DESTROYING|MAPPING|UNMAPPED| MAPPED |DESTROYED|
+/// +-------------+---------+----------+-------+--------+--------+---------+
+/// |  UNMAPPING  |    o    |  Window  |Window | Fading |  -     |    -    |
+/// |             |         |destroyed |mapped |finished|        |         |
+/// +-------------+---------+----------+-------+--------+--------+---------+
+/// |  DESTROYING |    -    |    o     |   -   |   -    |  -     | Fading  |
+/// |             |         |          |       |        |        |finished |
+/// +-------------+---------+----------+-------+--------+--------+---------+
+/// |   MAPPING   | Window  |  Window  |   o   |   -    | Fading |    -    |
+/// |             |unmapped |destroyed |       |        |finished|         |
+/// +-------------+---------+----------+-------+--------+--------+---------+
+/// |   UNMAPPED  |    -    |    -     |Window |   o    |   -    | Window  |
+/// |             |         |          |mapped |        |        |destroyed|
+/// +-------------+---------+----------+-------+--------+--------+---------+
+/// |    MAPPED   | Window  |  Window  |   -   |   -    |   o    |    -    |
+/// |             |unmapped |destroyed |       |        |        |         |
+/// +-------------+---------+----------+-------+--------+--------+---------+
 typedef enum {
 	// The window is being faded out because it's unmapped.
 	WSTATE_UNMAPPING,
@@ -59,8 +57,6 @@ typedef enum {
 	WSTATE_DESTROYING,
 	// The window is being faded in
 	WSTATE_MAPPING,
-	// Window opacity is not at the target level
-	WSTATE_FADING,
 	// The window is mapped, no fading is in progress.
 	WSTATE_MAPPED,
 	// The window is unmapped, no fading is in progress.
@@ -77,10 +73,6 @@ enum win_flags {
 	WIN_FLAGS_PIXMAP_NONE = 2,
 	/// there was an error trying to bind the images
 	WIN_FLAGS_IMAGE_ERROR = 4,
-	/// shadow is out of date, will be updated in win_process_flags
-	WIN_FLAGS_SHADOW_STALE = 8,
-	/// shadow has not been generated
-	WIN_FLAGS_SHADOW_NONE = 16,
 	/// the client window needs to be updated
 	WIN_FLAGS_CLIENT_STALE = 32,
 	/// the window is mapped by X, we need to call map_win_start for it
@@ -97,6 +89,6 @@ enum win_flags {
 };
 
 static const uint64_t WIN_FLAGS_IMAGES_STALE =
-    WIN_FLAGS_PIXMAP_STALE | WIN_FLAGS_SHADOW_STALE;
+    WIN_FLAGS_PIXMAP_STALE;
 
-#define WIN_FLAGS_IMAGES_NONE (WIN_FLAGS_PIXMAP_NONE | WIN_FLAGS_SHADOW_NONE)
+#define WIN_FLAGS_IMAGES_NONE (WIN_FLAGS_PIXMAP_NONE)

@@ -31,32 +31,9 @@ enum driver {
 	DRIVER_MODESETTING = 64,
 };
 
-static const char *driver_names[] = {
-    "AMDGPU", "Radeon", "fglrx", "NVIDIA", "nouveau", "Intel", "modesetting",
-};
-
 /// Return a list of all drivers currently in use by the X server.
 /// Note, this is a best-effort test, so no guarantee all drivers will be detected.
 enum driver detect_driver(xcb_connection_t *, struct backend_base *, xcb_window_t);
 
 /// Apply driver specified global workarounds. It's safe to call this multiple times.
 void apply_driver_workarounds(struct session *ps, enum driver);
-
-// Print driver names to stdout, for diagnostics
-static inline void print_drivers(enum driver drivers) {
-	const char *seen_drivers[ARR_SIZE(driver_names)];
-	int driver_count = 0;
-	for (size_t i = 0; i < ARR_SIZE(driver_names); i++) {
-		if (drivers & (1ul << i)) {
-			seen_drivers[driver_count++] = driver_names[i];
-		}
-	}
-
-	if (driver_count > 0) {
-		printf("%s", seen_drivers[0]);
-		for (int i = 1; i < driver_count; i++) {
-			printf(", %s", seen_drivers[i]);
-		}
-	}
-	printf("\n");
-}

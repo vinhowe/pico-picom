@@ -16,12 +16,9 @@
 // === Options ===
 
 // Debug options, enable them using -D in CFLAGS
-// #define DEBUG_REPAINT    1
 // #define DEBUG_EVENTS     1
 // #define DEBUG_RESTACK    1
 // #define DEBUG_WINMATCH   1
-// #define DEBUG_C2         1
-// #define DEBUG_GLX_DEBUG_CONTEXT        1
 
 #define MAX_ALPHA (255)
 
@@ -41,14 +38,7 @@
 #include <xcb/xproto.h>
 
 #include "uthash_extra.h"
-#ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
-#endif
-
-// X resource checker
-#ifdef DEBUG_XRC
-#include "xrescheck.h"
-#endif
 
 // FIXME This list of includes should get shorter
 #include "backend/backend.h"
@@ -95,23 +85,9 @@ typedef struct pending_reply {
 	enum pending_reply_action action;
 } pending_reply_t;
 
-#ifdef CONFIG_OPENGL
-#ifdef DEBUG_GLX_DEBUG_CONTEXT
-typedef GLXContext (*f_glXCreateContextAttribsARB)(Display *dpy, GLXFBConfig config,
-                                                   GLXContext share_context, Bool direct,
-                                                   const int *attrib_list);
-typedef void (*GLDEBUGPROC)(GLenum source, GLenum type, GLuint id, GLenum severity,
-                            GLsizei length, const GLchar *message, GLvoid *userParam);
-typedef void (*f_DebugMessageCallback)(GLDEBUGPROC, void *userParam);
-#endif
-
 typedef struct glx_prog_main {
 	/// GLSL program.
 	GLuint prog;
-	/// Location of uniform "opacity" in window GLSL program.
-	GLint unifm_opacity;
-	/// Location of uniform "invert_color" in blur GLSL program.
-	GLint unifm_invert_color;
 	/// Location of uniform "tex" in window GLSL program.
 	GLint unifm_tex;
 	/// Location of uniform "time" in window GLSL program.
@@ -119,14 +95,7 @@ typedef struct glx_prog_main {
 } glx_prog_main_t;
 
 #define GLX_PROG_MAIN_INIT                                                               \
-	{                                                                                \
-		.prog = 0, .unifm_opacity = -1, .unifm_invert_color = -1,                \
-		.unifm_tex = -1, .unifm_time = -1                                        \
-	}
-
-#else
-struct glx_prog_main {};
-#endif
+	{ .prog = 0, .unifm_tex = -1, .unifm_time = -1 }
 
 #define PAINT_INIT                                                                       \
 	{ .pixmap = XCB_NONE, .pict = XCB_NONE }
@@ -152,10 +121,6 @@ typedef struct session {
 	ev_io xiow;
 	/// Timer for checking DPMS power level
 	ev_timer dpms_check_timer;
-	/// Timeout for delayed unredirection.
-	ev_timer unredir_timer;
-	/// Timer for fading
-	ev_timer fade_timer;
 	/// Use an ev_idle callback for drawing
 	/// So we only start drawing when events are processed
 	ev_idle draw_idle;
@@ -171,12 +136,8 @@ typedef struct session {
 	// === Backend related ===
 	/// backend data
 	backend_t *backend_data;
-	/// backend blur context
-	void *backend_blur_context;
 	/// graphic drivers used
 	enum driver drivers;
-	/// file watch handle
-	void *file_watch_handle;
 	/// libev mainloop
 	struct ev_loop *loop;
 	/// Shaders
@@ -207,8 +168,6 @@ typedef struct session {
 	// Damage root_damage;
 	/// X Composite overlay window.
 	xcb_window_t overlay;
-	/// The target window for debug mode
-	xcb_window_t debug_window;
 	/// Whether the root tile is filled by us.
 	bool root_tile_fill;
 	/// Picture of the root window background.
@@ -226,14 +185,12 @@ typedef struct session {
 	paint_t tgt_buffer;
 	/// Window ID of the window we register as a symbol.
 	xcb_window_t reg_win;
-#ifdef CONFIG_OPENGL
 	/// Pointer to GLX data.
 	struct glx_session *psglx;
 	/// Custom GLX program used for painting window.
 	// XXX should be in struct glx_session
 	glx_prog_main_t glx_prog_win;
 	struct glx_fbconfig_info *argb_fbconfig;
-#endif
 	/// Sync fence to sync draw operations
 	xcb_sync_fence_t sync_fence;
 	/// Whether we are rendering the first frame after screen is redirected
@@ -246,8 +203,6 @@ typedef struct session {
 	uint64_t root_flags;
 	/// Program options.
 	options_t o;
-	/// Whether we have hit unredirection timeout.
-	bool tmout_unredir_hit;
 	/// Whether we need to redraw the screen
 	bool redraw_needed;
 
@@ -262,17 +217,11 @@ typedef struct session {
 	int ndamage;
 	/// Whether all windows are currently redirected.
 	bool redirected;
-	/// Pre-generated alpha pictures.
-	xcb_render_picture_t *alpha_picts;
-	/// Time of last fading. In milliseconds.
-	long long fade_time;
 	/// Head pointer of the error ignore linked list.
 	pending_reply_t *pending_reply_head;
 	/// Pointer to the <code>next</code> member of tail element of the error
 	/// ignore linked list.
 	pending_reply_t **pending_reply_tail;
-	// Cached blur convolution kernels.
-	struct x_convolution_kernel **blur_kerns_cache;
 	/// If we should quit
 	bool quit : 1;
 	// TODO(yshui) use separate flags for dfferent kinds of updates so we don't
@@ -304,28 +253,9 @@ typedef struct session {
 	/// subsidiary window detection.
 	xcb_window_t active_leader;
 
-	// === Shadow/dimming related ===
-	/// 1x1 black Picture.
-	xcb_render_picture_t black_picture;
-	/// 1x1 Picture of the shadow color.
-	xcb_render_picture_t cshadow_picture;
-	/// 1x1 white Picture.
-	xcb_render_picture_t white_picture;
-	/// Backend shadow context.
-	struct backend_shadow_context *shadow_context;
-	// for shadow precomputation
-	/// A region in which shadow is not painted on.
-	region_t shadow_exclude_reg;
-
 	// === Software-optimization-related ===
 	/// Nanosecond offset of the first painting.
 	long paint_tm_offset;
-
-#ifdef CONFIG_VSYNC_DRM
-	// === DRM VSync related ===
-	/// File descriptor of DRI device file. Used for DRM VSync.
-	int drm_fd;
-#endif
 
 	// === X extension related ===
 	/// Event base number for X Fixes extension.
@@ -388,11 +318,6 @@ typedef struct session {
 	/// Linked list of additional atoms to track.
 	latom_t *track_atom_lst;
 
-#ifdef CONFIG_DBUS
-	// === DBus related ===
-	void *dbus_data;
-#endif
-
 	int (*vsync_wait)(session_t *);
 } session_t;
 
@@ -407,65 +332,6 @@ void ev_xcb_error(session_t *ps, xcb_generic_error_t *err);
 // === Functions ===
 
 /**
- * Subtracting two struct timespec values.
- *
- * Taken from glibc manual.
- *
- * Subtract the `struct timespec' values X and Y,
- * storing the result in RESULT.
- * Return 1 if the difference is negative, otherwise 0.
- */
-static inline int
-timespec_subtract(struct timespec *result, struct timespec *x, struct timespec *y) {
-	/* Perform the carry for the later subtraction by updating y. */
-	if (x->tv_nsec < y->tv_nsec) {
-		long nsec = (y->tv_nsec - x->tv_nsec) / NS_PER_SEC + 1;
-		y->tv_nsec -= NS_PER_SEC * nsec;
-		y->tv_sec += nsec;
-	}
-
-	if (x->tv_nsec - y->tv_nsec > NS_PER_SEC) {
-		long nsec = (x->tv_nsec - y->tv_nsec) / NS_PER_SEC;
-		y->tv_nsec += NS_PER_SEC * nsec;
-		y->tv_sec -= nsec;
-	}
-
-	/* Compute the time remaining to wait.
-	   tv_nsec is certainly positive. */
-	result->tv_sec = x->tv_sec - y->tv_sec;
-	result->tv_nsec = x->tv_nsec - y->tv_nsec;
-
-	/* Return 1 if result is negative. */
-	return x->tv_sec < y->tv_sec;
-}
-
-/**
- * Get current time in struct timeval.
- */
-static inline struct timeval get_time_timeval(void) {
-	struct timeval tv = {0, 0};
-
-	gettimeofday(&tv, NULL);
-
-	// Return a time of all 0 if the call fails
-	return tv;
-}
-
-/**
- * Get current time in struct timespec.
- *
- * Note its starting time is unspecified.
- */
-static inline struct timespec get_time_timespec(void) {
-	struct timespec tm = {0, 0};
-
-	clock_gettime(CLOCK_MONOTONIC, &tm);
-
-	// Return a time of all 0 if the call fails
-	return tm;
-}
-
-/**
  * Return the painting target window.
  */
 static inline xcb_window_t get_tgt_window(session_t *ps) {
@@ -476,7 +342,7 @@ static inline xcb_window_t get_tgt_window(session_t *ps) {
  * Check if current backend uses GLX.
  */
 static inline bool bkend_use_glx(session_t *ps) {
-	return BKEND_GLX == ps->o.backend || BKEND_XR_GLX_HYBRID == ps->o.backend;
+	return BKEND_GLX == ps->o.backend;
 }
 
 static void
@@ -504,10 +370,6 @@ static inline void set_ignore_cookie(session_t *ps, xcb_void_cookie_t cookie) {
 	set_reply_action(ps, cookie.sequence, PENDING_REPLY_ACTION_IGNORE);
 }
 
-static inline void set_cant_fail_cookie(session_t *ps, xcb_void_cookie_t cookie) {
-	set_reply_action(ps, cookie.sequence, PENDING_REPLY_ACTION_ABORT);
-}
-
 /**
  * Determine if a window has a specific property.
  *
@@ -533,25 +395,3 @@ static inline bool wid_has_prop(const session_t *ps, xcb_window_t w, xcb_atom_t 
 }
 
 void force_repaint(session_t *ps);
-
-/** @name DBus handling
- */
-///@{
-#ifdef CONFIG_DBUS
-/** @name DBus hooks
- */
-///@{
-void opts_set_no_fading_openclose(session_t *ps, bool newval);
-//!@}
-#endif
-
-/**
- * Set a <code>bool</code> array of all wintypes to true.
- */
-static inline void wintype_arr_enable(bool arr[]) {
-	wintype_t i;
-
-	for (i = 0; i < NUM_WINTYPES; ++i) {
-		arr[i] = true;
-	}
-}

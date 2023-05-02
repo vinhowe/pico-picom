@@ -17,12 +17,9 @@
 #include <xcb/xfixes.h>
 
 #include "atom.h"
-#ifdef CONFIG_OPENGL
 #include "backend/gl/glx.h"
-#endif
 #include "common.h"
 #include "compiler.h"
-#include "kernel.h"
 #include "log.h"
 #include "region.h"
 #include "utils.h"
@@ -76,7 +73,7 @@ winprop_info_t x_get_prop_info(xcb_connection_t *c, xcb_window_t w, xcb_atom_t a
 	auto r = xcb_get_property_reply(
 	    c, xcb_get_property(c, 0, w, atom, XCB_ATOM_ANY, 0, 0), &e);
 	if (!r) {
-		log_debug_x_error(e, "Failed to get property info for window %#010x", w);
+		log_debug("Failed to get property info for window %#010x", w);
 		free(e);
 		return (winprop_info_t){
 		    .type = XCB_GET_PROPERTY_TYPE_ANY, .format = 0, .length = 0};
@@ -142,7 +139,7 @@ bool wid_get_text_prop(session_t *ps, xcb_window_t wid, xcb_atom_t prop, char **
 	auto r = xcb_get_property_reply(
 	    ps->c, xcb_get_property(ps->c, 0, wid, prop, type, 0, word_count), &e);
 	if (!r) {
-		log_debug_x_error(e, "Failed to get window property for %#010x", wid);
+		log_debug("Failed to get window property for %#010x", wid);
 		free(e);
 		return false;
 	}
@@ -252,15 +249,6 @@ xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_
 	return x_get_visual_for_pictfmt(g_pictfmts, pictfmt->id);
 }
 
-xcb_render_pictformat_t
-x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std) {
-	x_get_server_pictfmts(c);
-
-	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, std);
-
-	return pictfmt->id;
-}
-
 int x_get_visual_depth(xcb_connection_t *c, xcb_visualid_t visual) {
 	auto setup = xcb_get_setup(c);
 	for (auto screen = xcb_setup_roots_iterator(setup); screen.rem;
@@ -299,7 +287,7 @@ x_create_picture_with_pictfmt_and_pixmap(xcb_connection_t *c,
 	                             c, tmp_picture, pixmap, pictfmt->id, valuemask, buf));
 	free(buf);
 	if (e) {
-		log_error_x_error(e, "failed to create picture");
+		log_error("failed to create picture");
 		free(e);
 		return XCB_NONE;
 	}
@@ -312,28 +300,6 @@ x_create_picture_with_visual_and_pixmap(xcb_connection_t *c, xcb_visualid_t visu
                                         const xcb_render_create_picture_value_list_t *attr) {
 	const xcb_render_pictforminfo_t *pictfmt = x_get_pictform_for_visual(c, visual);
 	return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
-}
-
-xcb_render_picture_t
-x_create_picture_with_standard_and_pixmap(xcb_connection_t *c, xcb_pict_standard_t standard,
-                                          xcb_pixmap_t pixmap, uint32_t valuemask,
-                                          const xcb_render_create_picture_value_list_t *attr) {
-	x_get_server_pictfmts(c);
-
-	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
-	assert(pictfmt);
-	return x_create_picture_with_pictfmt_and_pixmap(c, pictfmt, pixmap, valuemask, attr);
-}
-
-xcb_render_picture_t
-x_create_picture_with_standard(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
-                               xcb_pict_standard_t standard, uint32_t valuemask,
-                               const xcb_render_create_picture_value_list_t *attr) {
-	x_get_server_pictfmts(c);
-
-	auto pictfmt = xcb_render_util_find_standard_format(g_pictfmts, standard);
-	assert(pictfmt);
-	return x_create_picture_with_pictfmt(c, d, w, h, pictfmt, valuemask, attr);
 }
 
 /**
@@ -371,7 +337,7 @@ bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_
 	xcb_xfixes_fetch_region_reply_t *xr =
 	    xcb_xfixes_fetch_region_reply(c, xcb_xfixes_fetch_region(c, r), &e);
 	if (!xr) {
-		log_error_x_error(e, "Failed to fetch rectangles");
+		log_error("Failed to fetch rectangles");
 		return false;
 	}
 
@@ -388,77 +354,6 @@ bool x_fetch_region(xcb_connection_t *c, xcb_xfixes_region_t r, pixman_region32_
 	free(b);
 	free(xr);
 	return ret;
-}
-
-uint32_t x_create_region(xcb_connection_t *c, const region_t *reg) {
-	if (!reg) {
-		return XCB_NONE;
-	}
-
-	int nrects;
-	// In older pixman versions, pixman_region32_rectangles doesn't take const
-	// region_t, instead of dealing with this version difference, just suppress the
-	// warning.
-	const pixman_box32_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
-	auto xrects = ccalloc(nrects, xcb_rectangle_t);
-	for (int i = 0; i < nrects; i++) {
-		xrects[i] =
-		    (xcb_rectangle_t){.x = to_i16_checked(rects[i].x1),
-		                      .y = to_i16_checked(rects[i].y1),
-		                      .width = to_u16_checked(rects[i].x2 - rects[i].x1),
-		                      .height = to_u16_checked(rects[i].y2 - rects[i].y1)};
-	}
-
-	xcb_xfixes_region_t ret = x_new_id(c);
-	bool success =
-	    XCB_AWAIT_VOID(xcb_xfixes_create_region, c, ret, to_u32_checked(nrects), xrects);
-	free(xrects);
-	if (!success) {
-		return XCB_NONE;
-	}
-	return ret;
-}
-
-void x_destroy_region(xcb_connection_t *c, xcb_xfixes_region_t r) {
-	if (r != XCB_NONE) {
-		xcb_xfixes_destroy_region(c, r);
-	}
-}
-
-void x_set_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict,
-                               int16_t clip_x_origin, int16_t clip_y_origin,
-                               const region_t *reg) {
-	int nrects;
-	const rect_t *rects = pixman_region32_rectangles((region_t *)reg, &nrects);
-	auto xrects = ccalloc(nrects, xcb_rectangle_t);
-	for (int i = 0; i < nrects; i++) {
-		xrects[i] = (xcb_rectangle_t){
-		    .x = to_i16_checked(rects[i].x1),
-		    .y = to_i16_checked(rects[i].y1),
-		    .width = to_u16_checked(rects[i].x2 - rects[i].x1),
-		    .height = to_u16_checked(rects[i].y2 - rects[i].y1),
-		};
-	}
-
-	xcb_generic_error_t *e = xcb_request_check(
-	    c, xcb_render_set_picture_clip_rectangles_checked(
-	           c, pict, clip_x_origin, clip_y_origin, to_u32_checked(nrects), xrects));
-	if (e) {
-		log_error_x_error(e, "Failed to set clip region");
-		free(e);
-	}
-	free(xrects);
-}
-
-void x_clear_picture_clip_region(xcb_connection_t *c, xcb_render_picture_t pict) {
-	assert(pict != XCB_NONE);
-	xcb_render_change_picture_value_list_t v = {.clipmask = XCB_NONE};
-	xcb_generic_error_t *e = xcb_request_check(
-	    c, xcb_render_change_picture_checked(c, pict, XCB_RENDER_CP_CLIP_MASK, &v));
-	if (e) {
-		log_error_x_error(e, "failed to clear clip region");
-		free(e);
-	}
 }
 
 enum {
@@ -577,19 +472,6 @@ void x_print_error(unsigned long serial, uint8_t major, uint16_t minor, uint8_t 
 	x_log_error(LOG_LEVEL_DEBUG, serial, major, minor, error_code);
 }
 
-/*
- * Convert a xcb_generic_error_t to a string that describes the error
- *
- * @return a pointer to a string. this pointer shouldn NOT be freed, same buffer is used
- *         for multiple calls to this function,
- */
-const char *x_strerror(xcb_generic_error_t *e) {
-	if (!e) {
-		return "No error";
-	}
-	return _x_strerror(e->full_sequence, e->major_code, e->minor_code, e->error_code);
-}
-
 /**
  * Create a pixmap and check that creation succeeded.
  */
@@ -603,7 +485,7 @@ xcb_pixmap_t x_create_pixmap(xcb_connection_t *c, uint8_t depth, xcb_drawable_t 
 		return pix;
 	}
 
-	log_error_x_error(err, "Failed to create pixmap");
+	log_error("Failed to create pixmap");
 	free(err);
 	return XCB_NONE;
 }
@@ -676,19 +558,19 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
 
 	auto e = xcb_request_check(c, xcb_sync_trigger_fence_checked(c, f));
 	if (e) {
-		log_error_x_error(e, "Failed to trigger the fence");
+		log_error("Failed to trigger the fence");
 		goto err;
 	}
 
 	e = xcb_request_check(c, xcb_sync_await_fence_checked(c, 1, &f));
 	if (e) {
-		log_error_x_error(e, "Failed to await on a fence");
+		log_error("Failed to await on a fence");
 		goto err;
 	}
 
 	e = xcb_request_check(c, xcb_sync_reset_fence_checked(c, f));
 	if (e) {
-		log_error_x_error(e, "Failed to reset the fence");
+		log_error("Failed to reset the fence");
 		goto err;
 	}
 	return true;
@@ -696,54 +578,6 @@ bool x_fence_sync(xcb_connection_t *c, xcb_sync_fence_t f) {
 err:
 	free(e);
 	return false;
-}
-
-/**
- * Convert a struct conv to a X picture convolution filter, normalizing the kernel
- * in the process. Allow the caller to specify the element at the center of the kernel,
- * for compatibility with legacy code.
- *
- * @param[in] kernel the convolution kernel
- * @param[in] center the element to put at the center of the matrix
- * @param[inout] ret pointer to an array of `size`, if `size` is too small, more space
- *                   will be allocated, and `*ret` will be updated
- * @param[inout] size size of the array pointed to by `ret`, in number of elements
- * @return number of elements filled into `*ret`
- */
-void x_create_convolution_kernel(const conv *kernel, double center,
-                                 struct x_convolution_kernel **ret) {
-	assert(ret);
-	if (!*ret || (*ret)->capacity < kernel->w * kernel->h + 2) {
-		free(*ret);
-		*ret =
-		    cvalloc(sizeof(struct x_convolution_kernel) +
-		            (size_t)(kernel->w * kernel->h + 2) * sizeof(xcb_render_fixed_t));
-		(*ret)->capacity = kernel->w * kernel->h + 2;
-	}
-
-	(*ret)->size = kernel->w * kernel->h + 2;
-
-	auto buf = (*ret)->kernel;
-	buf[0] = DOUBLE_TO_XFIXED(kernel->w);
-	buf[1] = DOUBLE_TO_XFIXED(kernel->h);
-
-	double sum = center;
-	for (int i = 0; i < kernel->w * kernel->h; i++) {
-		if (i == kernel->w * kernel->h / 2) {
-			continue;
-		}
-		sum += kernel->data[i];
-	}
-
-	// Note for floating points a / b != a * (1 / b), but this shouldn't have any real
-	// impact on the result
-	double factor = sum != 0 ? 1.0 / sum : 1;
-	for (int i = 0; i < kernel->w * kernel->h; i++) {
-		buf[i + 2] = DOUBLE_TO_XFIXED(kernel->data[i] * factor);
-	}
-
-	buf[kernel->h / 2 * kernel->w + kernel->w / 2 + 2] =
-	    DOUBLE_TO_XFIXED(center * factor);
 }
 
 /// Generate a search criteria for fbconfig from a X visual.
@@ -792,7 +626,7 @@ xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen) {
 void x_update_randr_monitors(session_t *ps) {
 	x_free_randr_info(ps);
 
-	if (!ps->o.crop_shadow_to_monitor || !ps->randr_exists) {
+	if (!ps->randr_exists) {
 		return;
 	}
 

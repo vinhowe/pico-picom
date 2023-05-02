@@ -12,8 +12,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include <test.h>
-
 #include <time.h>
 
 #include "compiler.h"
@@ -36,13 +34,6 @@ safe_isnan(double a) {
 	return __builtin_isnan(a);
 }
 
-/// Same as assert(false), but make sure we abort _even in release builds_.
-/// Silence compiler warning caused by release builds making some code paths reachable.
-#define BUG()                                                                            \
-	do {                                                                             \
-		assert(false);                                                           \
-		abort();                                                                 \
-	} while (0)
 #define CHECK_EXPR(...) ((void)0)
 /// Same as assert, but evaluates the expression even in release builds
 #define CHECK(expr)                                                                      \
@@ -116,107 +107,27 @@ safe_isnan(double a) {
 		ASSERT_IN_RANGE(__to_tmp, 0, max);                                       \
 		(uint32_t) __to_tmp;                                                     \
 	})
-/**
- * Normalize an int value to a specific range.
- *
- * @param i int value to normalize
- * @param min minimal value
- * @param max maximum value
- * @return normalized value
- */
-static inline int attr_const normalize_i_range(int i, int min, int max) {
-	if (i > max)
-		return max;
-	if (i < min)
-		return min;
-	return i;
-}
 
 #define min2(a, b) ((a) > (b) ? (b) : (a))
 #define max2(a, b) ((a) > (b) ? (a) : (b))
-#define min3(a, b, c) min2(a, min2(b, c))
-
-/// clamp `val` into interval [min, max]
-#define clamp(val, min, max) max2(min2(val, max), min)
-
-/**
- * Normalize a double value to a specific range.
- *
- * @param d double value to normalize
- * @param min minimal value
- * @param max maximum value
- * @return normalized value
- */
-static inline double attr_const normalize_d_range(double d, double min, double max) {
-	if (d > max)
-		return max;
-	if (d < min)
-		return min;
-	return d;
-}
-
-/**
- * Normalize a double value to 0.\ 0 - 1.\ 0.
- *
- * @param d double value to normalize
- * @return normalized value
- */
-static inline double attr_const normalize_d(double d) {
-	return normalize_d_range(d, 0.0, 1.0);
-}
-
-/**
- * Convert a hex RGB string to RGB
- */
-static inline struct color hex_to_rgb(const char *hex) {
-	struct color rgb;
-	// Ignore the # in front of the string
-	const char *sane_hex = hex + 1;
-	int hex_color = (int)strtol(sane_hex, NULL, 16);
-	rgb.red = (float)(hex_color >> 16) / 256;
-	rgb.green = (float)((hex_color & 0x00ff00) >> 8) / 256;
-	rgb.blue = (float)(hex_color & 0x0000ff) / 256;
-
-	return rgb;
-}
-
-attr_noret void
-report_allocation_failure(const char *func, const char *file, unsigned int line);
-
-/**
- * @brief Quit if the passed-in pointer is empty.
- */
-static inline void *
-allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr) {
-	if (unlikely(!ptr)) {
-		report_allocation_failure(func_name, file, line);
-	}
-	return ptr;
-}
-
-/// @brief Wrapper of allocchk_().
-#define allocchk(ptr) allocchk_(__func__, __FILE__, __LINE__, ptr)
 
 /// @brief Wrapper of malloc().
-#define cmalloc(type) ((type *)allocchk(malloc(sizeof(type))))
-
-/// @brief Wrapper of malloc() that takes a size
-#define cvalloc(size) allocchk(malloc(size))
+#define cmalloc(type) ((type *)malloc(sizeof(type)))
 
 /// @brief Wrapper of calloc().
 #define ccalloc(nmemb, type)                                                             \
 	({                                                                               \
 		auto tmp = (nmemb);                                                      \
 		ASSERT_GEQ(tmp, 0);                                                      \
-		((type *)allocchk(calloc((size_t)tmp, sizeof(type))));                   \
+		((type *)calloc((size_t)tmp, sizeof(type)));                             \
 	})
 
 /// @brief Wrapper of ealloc().
-#define crealloc(ptr, nmemb)                                                               \
-	({                                                                                 \
-		auto tmp = (nmemb);                                                        \
-		ASSERT_GEQ(tmp, 0);                                                        \
-		((__typeof__(ptr))allocchk(realloc((ptr), (size_t)tmp * sizeof(*(ptr))))); \
+#define crealloc(ptr, nmemb)                                                             \
+	({                                                                               \
+		auto tmp = (nmemb);                                                      \
+		ASSERT_GEQ(tmp, 0);                                                      \
+		((__typeof__(ptr))realloc((ptr), (size_t)tmp * sizeof(*(ptr))));         \
 	})
 
 /// RC_TYPE generates a reference counted type from `type`
@@ -272,37 +183,6 @@ allocchk_(const char *func_name, const char *file, unsigned int line, void *ptr)
 	type *name##_new(void);                                                          \
 	void name##_ref(type *a);                                                        \
 	void name##_unref(type **a);
-
-static inline void free_charpp(char **str) {
-	if (str) {
-		free(*str);
-		*str = NULL;
-	}
-}
-
-/// An allocated char* that is automatically freed when it goes out of scope.
-#define scoped_charp char *cleanup(free_charpp)
-
-///
-/// Calculates next closest power of two of 32bit integer n
-/// ref: https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-///
-int next_power_of_two(int n);
-
-struct rolling_max;
-
-struct rolling_max *rolling_max_new(int window_size);
-void rolling_max_free(struct rolling_max *rm);
-void rolling_max_reset(struct rolling_max *rm);
-void rolling_max_push(struct rolling_max *rm, int val);
-int rolling_max_get_max(struct rolling_max *rm);
-
-struct rolling_avg;
-struct rolling_avg *rolling_avg_new(int window_size);
-void rolling_avg_free(struct rolling_avg *ra);
-void rolling_avg_reset(struct rolling_avg *ra);
-void rolling_avg_push(struct rolling_avg *ra, int val);
-double rolling_avg_get_avg(struct rolling_avg *ra);
 
 // Some versions of the Android libc do not have timespec_get(), use
 // clock_gettime() instead.

@@ -13,7 +13,9 @@ Checks: >
   -readability-isolate-declaration,
   -readability-magic-numbers,
   -readability-identifier-length,
-  -bugprone-easily-swappable-parameters
+  -bugprone-easily-swappable-parameters,
+  *-unused-*,
+  -misc-unused-parameters
 AnalyzeTemporaryDtors: false
 FormatStyle:     file
 CheckOptions:

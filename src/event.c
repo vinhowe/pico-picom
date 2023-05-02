@@ -49,31 +49,6 @@
 
 // TODO(yshui) the things described above
 
-/**
- * Get a window's name from window ID.
- */
-static inline const char *ev_window_name(session_t *ps, xcb_window_t wid) {
-	char *name = "";
-	if (wid) {
-		name = "(Failed to get title)";
-		if (ps->root == wid) {
-			name = "(Root window)";
-		} else if (ps->overlay == wid) {
-			name = "(Overlay)";
-		} else {
-			auto w = find_managed_win(ps, wid);
-			if (!w) {
-				w = find_toplevel(ps, wid);
-			}
-
-			if (w && w->name) {
-				name = w->name;
-			}
-		}
-	}
-	return name;
-}
-
 static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_t *ev) {
 	switch (ev->response_type) {
 	case FocusIn:
@@ -101,84 +76,11 @@ static inline xcb_window_t attr_pure ev_window(session_t *ps, xcb_generic_event_
 	}
 }
 
-#define CASESTRRET(s)                                                                    \
-	case s: return #s;
-
-static inline const char *ev_name(session_t *ps, xcb_generic_event_t *ev) {
-	static char buf[128];
-	switch (ev->response_type & 0x7f) {
-		CASESTRRET(FocusIn);
-		CASESTRRET(FocusOut);
-		CASESTRRET(CreateNotify);
-		CASESTRRET(ConfigureNotify);
-		CASESTRRET(DestroyNotify);
-		CASESTRRET(MapNotify);
-		CASESTRRET(UnmapNotify);
-		CASESTRRET(ReparentNotify);
-		CASESTRRET(CirculateNotify);
-		CASESTRRET(Expose);
-		CASESTRRET(PropertyNotify);
-		CASESTRRET(ClientMessage);
-	}
-
-	if (ps->damage_event + XCB_DAMAGE_NOTIFY == ev->response_type) {
-		return "Damage";
-	}
-
-	if (ps->shape_exists && ev->response_type == ps->shape_event) {
-		return "ShapeNotify";
-	}
-
-	if (ps->xsync_exists) {
-		int o = ev->response_type - ps->xsync_event;
-		switch (o) {
-			CASESTRRET(XSyncCounterNotify);
-			CASESTRRET(XSyncAlarmNotify);
-		}
-	}
-
-	sprintf(buf, "Event %d", ev->response_type);
-
-	return buf;
-}
-
-static inline const char *attr_pure ev_focus_mode_name(xcb_focus_in_event_t *ev) {
-	switch (ev->mode) {
-		CASESTRRET(NotifyNormal);
-		CASESTRRET(NotifyWhileGrabbed);
-		CASESTRRET(NotifyGrab);
-		CASESTRRET(NotifyUngrab);
-	}
-
-	return "Unknown";
-}
-
-static inline const char *attr_pure ev_focus_detail_name(xcb_focus_in_event_t *ev) {
-	switch (ev->detail) {
-		CASESTRRET(NotifyAncestor);
-		CASESTRRET(NotifyVirtual);
-		CASESTRRET(NotifyInferior);
-		CASESTRRET(NotifyNonlinear);
-		CASESTRRET(NotifyNonlinearVirtual);
-		CASESTRRET(NotifyPointer);
-		CASESTRRET(NotifyPointerRoot);
-		CASESTRRET(NotifyDetailNone);
-	}
-
-	return "Unknown";
-}
-
-#undef CASESTRRET
-
-static inline void ev_focus_in(session_t *ps, xcb_focus_in_event_t *ev) {
-	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
-	          ev_focus_detail_name(ev));
+static inline void ev_focus_in(session_t *ps) {
 	ps->pending_updates = true;
 }
 
-static inline void ev_focus_out(session_t *ps, xcb_focus_out_event_t *ev) {
-	log_debug("{ mode: %s, detail: %s }\n", ev_focus_mode_name(ev),
-	          ev_focus_detail_name(ev));
+static inline void ev_focus_out(session_t *ps) {
 	ps->pending_updates = true;
 }
 
@@ -209,9 +111,8 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 	// configure notifies in this cycle, or the window could receive multiple updates
 	// while it's unmapped.
 	bool position_changed = mw->pending_g.x != ce->x || mw->pending_g.y != ce->y;
-	bool size_changed = mw->pending_g.width != ce->width ||
-	                    mw->pending_g.height != ce->height ||
-	                    mw->pending_g.border_width != ce->border_width;
+	bool size_changed =
+	    mw->pending_g.width != ce->width || mw->pending_g.height != ce->height;
 	if (position_changed || size_changed) {
 		// Queue pending updates
 		win_set_flags(mw, WIN_FLAGS_FACTOR_CHANGED);
@@ -221,19 +122,14 @@ static void configure_win(session_t *ps, xcb_configure_notify_event_t *ce) {
 
 		// At least one of the following if's is true
 		if (position_changed) {
-			log_trace("Window position changed, %dx%d -> %dx%d", mw->g.x,
-			          mw->g.y, ce->x, ce->y);
 			mw->pending_g.x = ce->x;
 			mw->pending_g.y = ce->y;
 			win_set_flags(mw, WIN_FLAGS_POSITION_STALE);
 		}
 
 		if (size_changed) {
-			log_trace("Window size changed, %dx%d -> %dx%d", mw->g.width,
-			          mw->g.height, ce->width, ce->height);
 			mw->pending_g.width = ce->width;
 			mw->pending_g.height = ce->height;
-			mw->pending_g.border_width = ce->border_width;
 			win_set_flags(mw, WIN_FLAGS_SIZE_STALE);
 		}
 
@@ -343,7 +239,7 @@ static inline void ev_reparent_notify(session_t *ps, xcb_reparent_notify_event_t
 				auto ret = destroy_win_start(ps, w);
 				if (!ret && w->managed) {
 					auto mw = (struct managed_win *)w;
-					CHECK(win_skip_fading(ps, mw));
+					CHECK(win_finish_transition(ps, mw));
 				}
 			}
 		}
@@ -452,14 +348,9 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 	}
 
 	if (ps->root == ev->window) {
-		if (ps->o.use_ewmh_active_win && ps->atoms->a_NET_ACTIVE_WINDOW == ev->atom) {
-			// to update focus
-			ps->pending_updates = true;
-		} else {
-			// Destroy the root "image" if the wallpaper probably changed
-			if (x_is_root_back_pixmap_atom(ps->atoms, ev->atom)) {
-				root_damaged(ps);
-			}
+		// Destroy the root "image" if the wallpaper probably changed
+		if (x_is_root_back_pixmap_atom(ps->atoms, ev->atom)) {
+			root_damaged(ps);
 		}
 
 		// Unconcerned about any other proprties on root window
@@ -500,14 +391,6 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 		queue_redraw(ps);
 	}
 
-	// If _NET_WM_WINDOW_OPACITY changes
-	if (ev->atom == ps->atoms->a_NET_WM_WINDOW_OPACITY) {
-		auto w = find_managed_win(ps, ev->window) ?: find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
 	// If frame extents property changes
 	if (ev->atom == ps->atoms->a_NET_FRAME_EXTENTS) {
 		auto w = find_toplevel(ps, ev->window);
@@ -534,23 +417,6 @@ static inline void ev_property_notify(session_t *ps, xcb_property_notify_event_t
 
 	// If role changes
 	if (ps->atoms->aWM_WINDOW_ROLE == ev->atom) {
-		auto w = find_toplevel(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If _COMPTON_SHADOW changes
-	if (ps->atoms->a_COMPTON_SHADOW == ev->atom) {
-		auto w = find_managed_win(ps, ev->window);
-		if (w) {
-			win_set_property_stale(w, ev->atom);
-		}
-	}
-
-	// If a leader property changes
-	if ((ps->o.detect_transient && ps->atoms->aWM_TRANSIENT_FOR == ev->atom) ||
-	    (ps->o.detect_client_leader && ps->atoms->aWM_CLIENT_LEADER == ev->atom)) {
 		auto w = find_toplevel(ps, ev->window);
 		if (w) {
 			win_set_property_stale(w, ev->atom);
@@ -591,8 +457,7 @@ static inline void repair_win(session_t *ps, struct managed_win *w) {
 		set_ignore_cookie(
 		    ps, xcb_damage_subtract(ps->c, w->damage, XCB_NONE, ps->damaged_region));
 		x_fetch_region(ps->c, ps->damaged_region, &parts);
-		pixman_region32_translate(&parts, w->g.x + w->g.border_width,
-		                          w->g.y + w->g.border_width);
+		pixman_region32_translate(&parts, w->g.x, w->g.y);
 	}
 
 	log_trace("Mark window %#010x (%s) as having received damage", w->base.id, w->name);
@@ -637,12 +502,6 @@ static inline void ev_shape_notify(session_t *ps, xcb_shape_notify_event_t *ev) 
 		return;
 	}
 
-	/*
-	 * Empty bounding_shape may indicated an
-	 * unmapped/destroyed window, in which case
-	 * seemingly BadRegion errors would be triggered
-	 * if we attempt to rebuild border_size
-	 */
 	// Mark the old bounding shape as damaged
 	if (!win_check_flags_any(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_POSITION_STALE)) {
 		region_t tmp = win_get_bounding_shape_global_by_val(w);
@@ -667,15 +526,6 @@ ev_selection_clear(session_t *ps, xcb_selection_clear_event_t attr_unused *ev) {
 void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	if ((ev->response_type & 0x7f) != KeymapNotify) {
 		discard_pending(ps, ev->full_sequence);
-	}
-
-	xcb_window_t wid = ev_window(ps, ev);
-	if (ev->response_type != ps->damage_event + XCB_DAMAGE_NOTIFY) {
-		log_debug("event %10.10s serial %#010x window %#010x \"%s\"",
-		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
-	} else {
-		log_trace("event %10.10s serial %#010x window %#010x \"%s\"",
-		          ev_name(ps, ev), ev->full_sequence, wid, ev_window_name(ps, wid));
 	}
 
 	// Check if a custom XEvent constructor was registered in xlib for this event
@@ -709,8 +559,8 @@ void ev_handle(session_t *ps, xcb_generic_event_t *ev) {
 	queue_redraw(ps);
 
 	switch (ev->response_type) {
-	case FocusIn: ev_focus_in(ps, (xcb_focus_in_event_t *)ev); break;
-	case FocusOut: ev_focus_out(ps, (xcb_focus_out_event_t *)ev); break;
+	case FocusIn: ev_focus_in(ps); break;
+	case FocusOut: ev_focus_out(ps); break;
 	case CreateNotify: ev_create_notify(ps, (xcb_create_notify_event_t *)ev); break;
 	case ConfigureNotify:
 		ev_configure_notify(ps, (xcb_configure_notify_event_t *)ev);

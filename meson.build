@@ -21,21 +21,6 @@ if get_option('buildtype') == 'release'
 	add_global_arguments('-DNDEBUG', language: 'c')
 endif
 
-if get_option('sanitize')
-	sanitizers = ['address', 'undefined']
-	if cc.has_argument('-fsanitize=integer')
-		sanitizers += ['integer']
-	endif
-	if cc.has_argument('-fsanitize=nullability')
-		sanitizers += ['nullability']
-	endif
-	add_global_arguments('-fsanitize='+','.join(sanitizers), language: 'c')
-	add_global_link_arguments('-fsanitize='+','.join(sanitizers), language: 'c')
-	if cc.has_argument('-fno-sanitize=unsigned-integer-overflow')
-		add_global_arguments('-fno-sanitize=unsigned-integer-overflow', language: 'c')
-	endif
-endif
-
 if get_option('modularize')
 	if not cc.has_argument('-fmodules')
 		error('option \'modularize\' requires clang')
@@ -58,7 +43,7 @@ if get_option('warning_level') != '0'
             'nonnull', 'shadow', 'no-type-limits', 'old-style-declaration', 'override-init',
             'sign-compare', 'type-limits', 'uninitialized', 'shift-negative-value',
             'unused-but-set-parameter', 'unused-parameter', 'implicit-fallthrough=2',
-            'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body' ]
+            'no-unknown-warning-option', 'no-missing-braces', 'conversion', 'empty-body', 'unused-function' ]
   foreach w : warns
           if cc.has_argument('-W'+w)
                   add_global_arguments('-W'+w, language: 'c')
@@ -66,21 +51,18 @@ if get_option('warning_level') != '0'
   endforeach
 endif
 
-test_h_dep = subproject('test.h').get_variable('test_h_dep')
+profiling = get_option('profiling')
+if profiling
+  args = ['-pg']
+  profiling = cc.has_multi_arguments(args)
+  if profiling
+    add_project_arguments(args, language: 'c')
+    add_project_link_arguments(args,  language: 'c')
+  endif
+endif
 
 subdir('src')
 subdir('man')
 
-install_data('bin/picom-trans', install_dir: get_option('bindir'))
 install_data('picom.desktop', install_dir: 'share/applications')
 install_data('picom.desktop', install_dir: get_option('sysconfdir') / 'xdg' / 'autostart')
-
-if get_option('compton')
-	install_data('compton.desktop', install_dir: 'share/applications')
-	install_data('media/icons/48x48/compton.png',
-                     install_dir: 'share/icons/hicolor/48x48/apps')
-	install_data('media/compton.svg',
-                     install_dir: 'share/icons/hicolor/scalable/apps')
-
-	meson.add_install_script('meson/install.sh')
-endif

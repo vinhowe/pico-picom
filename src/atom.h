@@ -9,7 +9,6 @@
 // clang-format off
 // Splitted into 2 lists because of the limitation of our macros
 #define ATOM_LIST1 \
-	_NET_WM_WINDOW_OPACITY, \
 	_NET_FRAME_EXTENTS, \
 	WM_STATE, \
 	_NET_WM_NAME, \
@@ -22,7 +21,6 @@
 	WM_CLIENT_LEADER, \
 	WM_CLIENT_MACHINE, \
 	_NET_ACTIVE_WINDOW, \
-	_COMPTON_SHADOW, \
 	_NET_WM_WINDOW_TYPE
 
 #define ATOM_LIST2 \

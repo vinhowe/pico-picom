@@ -3,15 +3,6 @@
 module compiler {
   header "compiler.h"
 }
-module string_utils {
-  header "string_utils.h"
-}
-module dbus {
-  header "dbus.h"
-}
-module kernel {
-  header "kernel.h"
-}
 module utils {
   // Has macros expands to calloc/malloc
   header "utils.h"
@@ -26,9 +17,6 @@ module picom {
 module types {
   header "types.h"
 }
-module c2 {
-  header "c2.h"
-}
 module render {
   header "render.h"
 }
@@ -37,9 +25,6 @@ module options {
 }
 module opengl {
   header "opengl.h"
-}
-module diagnostic {
-  header "diagnostic.h"
 }
 module win_defs {
   header "win_defs.h"
@@ -60,12 +45,6 @@ module vsync {
 }
 module common {
   header "common.h"
-}
-module config {
-  header "config.h"
-}
-module xrescheck {
-  header "xrescheck.h"
 }
 module cache {
   header "cache.h"

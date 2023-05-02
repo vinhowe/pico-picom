@@ -1,7 +1,7 @@
 # enable xrender
-srcs += [ files('backend_common.c', 'xrender/xrender.c', 'dummy/dummy.c', 'backend.c', 'driver.c') ]
+srcs += [ files('backend_common.c', 'dummy/dummy.c', 'backend.c', 'driver.c') ]
 
 # enable opengl
 if get_option('opengl')
-  srcs += [ files('gl/gl_common.c', 'gl/glx.c', 'gl/blur.c', 'gl/shaders.c', 'gl/egl.c') ]
+  srcs += [ files('gl/gl_common.c', 'gl/glx.c', 'gl/shaders.c') ]
 endif

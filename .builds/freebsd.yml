@@ -10,10 +10,7 @@ packages:
   - xcb-util-image
   - pixman
   - uthash
-  - libconfig
   - libglvnd
-  - dbus
-  - pcre
 sources:
   - https://github.com/yshui/picom
 tasks:

@@ -11,7 +11,6 @@
 #include <xcb/xfixes.h>
 
 #include "compiler.h"
-#include "kernel.h"
 #include "log.h"
 #include "region.h"
 
@@ -79,13 +78,6 @@ struct xvisual_info {
 		}                                                                        \
 		__r;                                                                     \
 	})
-
-#define log_debug_x_error(e, fmt, ...)                                                   \
-	LOG(DEBUG, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
-#define log_error_x_error(e, fmt, ...)                                                   \
-	LOG(ERROR, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
-#define log_fatal_x_error(e, fmt, ...)                                                   \
-	LOG(FATAL, fmt " (%s)", ##__VA_ARGS__, x_strerror(e))
 
 // xcb-render specific macros
 #define XFIXED_TO_DOUBLE(value) (((double)(value)) / 65536)
@@ -186,18 +178,6 @@ x_create_picture_with_visual_and_pixmap(xcb_connection_t *, xcb_visualid_t visua
                                         const xcb_render_create_picture_value_list_t *attr)
     attr_nonnull(1);
 
-xcb_render_picture_t
-x_create_picture_with_standard_and_pixmap(xcb_connection_t *, xcb_pict_standard_t standard,
-                                          xcb_pixmap_t pixmap, uint32_t valuemask,
-                                          const xcb_render_create_picture_value_list_t *attr)
-    attr_nonnull(1);
-
-xcb_render_picture_t
-x_create_picture_with_standard(xcb_connection_t *c, xcb_drawable_t d, int w, int h,
-                               xcb_pict_standard_t standard, uint32_t valuemask,
-                               const xcb_render_create_picture_value_list_t *attr)
-    attr_nonnull(1);
-
 /**
  * Create an picture.
  */
@@ -218,14 +198,6 @@ bool x_fetch_region(xcb_connection_t *, xcb_xfixes_region_t r, region_t *res);
 
 /// Create a X region from a pixman region
 uint32_t x_create_region(xcb_connection_t *c, const region_t *reg);
-
-/// Destroy a X region
-void x_destroy_region(xcb_connection_t *c, uint32_t region);
-
-void x_set_picture_clip_region(xcb_connection_t *, xcb_render_picture_t, int16_t clip_x_origin,
-                               int16_t clip_y_origin, const region_t *);
-
-void x_clear_picture_clip_region(xcb_connection_t *, xcb_render_picture_t pict);
 
 /**
  * Log a X11 error
@@ -271,34 +243,11 @@ bool x_is_root_back_pixmap_atom(struct atom *atoms, xcb_atom_t atom);
 
 bool x_fence_sync(xcb_connection_t *, xcb_sync_fence_t);
 
-struct x_convolution_kernel {
-	int size;
-	int capacity;
-	xcb_render_fixed_t kernel[];
-};
-
-/**
- * Convert a struct conv to a X picture convolution filter, normalizing the kernel
- * in the process. Allow the caller to specify the element at the center of the kernel,
- * for compatibility with legacy code.
- *
- * @param[in] kernel the convolution kernel
- * @param[in] center the element to put at the center of the matrix
- * @param[inout] ret pointer to an array of `size`, if `size` is too small, more space
- *                   will be allocated, and `*ret` will be updated.
- * @param[inout] size size of the array pointed to by `ret`.
- */
-void attr_nonnull(1, 3) x_create_convolution_kernel(const conv *kernel, double center,
-                                                    struct x_convolution_kernel **ret);
-
 /// Generate a search criteria for fbconfig from a X visual.
 /// Returns {-1, -1, -1, -1, -1, -1} on failure
 struct xvisual_info x_get_visual_info(xcb_connection_t *c, xcb_visualid_t visual);
 
 xcb_visualid_t x_get_visual_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
-
-xcb_render_pictformat_t
-x_get_pictfmt_for_standard(xcb_connection_t *c, xcb_pict_standard_t std);
 
 xcb_screen_t *x_screen_of_display(xcb_connection_t *c, int screen);
 

@@ -89,11 +89,8 @@ __R__ for runtime
 * xproto / x11proto (B)
 * sh (R)
 * xprop,xwininfo / x11-utils (R)
-* libpcre (B,R) (Can be disabled with `NO_REGEX_PCRE` at compile time)
-* libconfig (B,R) (Can be disabled with `NO_LIBCONFIG` at compile time)
 * libdrm (B) (Can be disabled with `NO_VSYNC_DRM` at compile time)
 * libGL (B,R) (Can be disabled with `NO_VSYNC_OPENGL` at compile time)
-* libdbus (B,R) (Can be disabled with `NO_DBUS` at compile time)
 * asciidoc (B) (and docbook-xml-dtd-4.5, libxml-utils, libxslt, xsltproc, xmlto, etc. if your distro doesn't pull them in)
 
 ### How to build

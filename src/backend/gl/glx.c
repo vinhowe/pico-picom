@@ -204,14 +204,6 @@ void glx_deinit(backend_t *base) {
 	free(gd);
 }
 
-static void *glx_decouple_user_data(backend_t *base attr_unused, void *ud attr_unused) {
-	auto ret = cmalloc(struct _glx_pixmap);
-	ret->owned = false;
-	ret->glpixmap = 0;
-	ret->pixmap = 0;
-	return ret;
-}
-
 static bool glx_set_swap_interval(int interval, Display *dpy, GLXDrawable drawable) {
 	bool vsync_enabled = false;
 	if (glxext.has_GLX_MESA_swap_control) {
@@ -344,15 +336,10 @@ static backend_t *glx_init(session_t *ps) {
 		goto end;
 	}
 
-	gd->gl.decouple_texture_user_data = glx_decouple_user_data;
 	gd->gl.release_user_data = glx_release_image;
 
-	if (ps->o.vsync) {
-		if (!glx_set_swap_interval(1, ps->dpy, tgt)) {
-			log_error("Failed to enable vsync.");
-		}
-	} else {
-		glx_set_swap_interval(0, ps->dpy, tgt);
+	if (!glx_set_swap_interval(1, ps->dpy, tgt)) {
+		log_error("Failed to enable vsync.");
 	}
 
 	success = true;
@@ -484,68 +471,18 @@ static int glx_buffer_age(backend_t *base) {
 	return (int)val ?: -1;
 }
 
-static void glx_diagnostics(backend_t *base) {
-	struct _glx_data *gd = (void *)base;
-	bool warn_software_rendering = false;
-	const char *software_renderer_names[] = {"llvmpipe", "SWR", "softpipe"};
-	auto glx_vendor = glXGetClientString(gd->display, GLX_VENDOR);
-	printf("* Driver vendors:\n");
-	printf(" * GLX: %s\n", glx_vendor);
-	printf(" * GL: %s\n", glGetString(GL_VENDOR));
-
-	auto gl_renderer = (const char *)glGetString(GL_RENDERER);
-	printf("* GL renderer: %s\n", gl_renderer);
-	if (strcmp(glx_vendor, "Mesa Project and SGI") == 0) {
-		for (size_t i = 0; i < ARR_SIZE(software_renderer_names); i++) {
-			if (strstr(gl_renderer, software_renderer_names[i]) != NULL) {
-				warn_software_rendering = true;
-				break;
-			}
-		}
-	}
-
-#ifdef GLX_MESA_query_renderer
-	if (glxext.has_GLX_MESA_query_renderer) {
-		unsigned int accelerated = 0;
-		glXQueryCurrentRendererIntegerMESA(GLX_RENDERER_ACCELERATED_MESA, &accelerated);
-		printf("* Accelerated: %d\n", accelerated);
-
-		// Trust GLX_MESA_query_renderer when it's available
-		warn_software_rendering = (accelerated == 0);
-	}
-#endif
-
-	if (warn_software_rendering) {
-		printf("\n(You are using a software renderer. Unless you are doing this\n"
-		       "intentionally, this means you don't have a graphics driver\n"
-		       "properly installed. Performance will suffer. Please fix this\n"
-		       "before reporting your issue.)\n");
-	}
-}
-
 struct backend_operations glx_ops = {
     .init = glx_init,
     .deinit = glx_deinit,
     .bind_pixmap = glx_bind_pixmap,
     .release_image = gl_release_image,
     .compose = gl_compose,
-    .image_op = gl_image_op,
     .set_image_property = gl_set_image_property,
     .clone_image = default_clone_image,
-    .blur = gl_blur,
     .is_image_transparent = default_is_image_transparent,
     .present = glx_present,
     .buffer_age = glx_buffer_age,
-    .create_shadow_context = gl_create_shadow_context,
-    .destroy_shadow_context = gl_destroy_shadow_context,
-    .render_shadow = backend_render_shadow_from_mask,
-    .shadow_from_mask = gl_shadow_from_mask,
-    .make_mask = gl_make_mask,
     .fill = gl_fill,
-    .create_blur_context = gl_create_blur_context,
-    .destroy_blur_context = gl_destroy_blur_context,
-    .get_blur_size = gl_get_blur_size,
-    .diagnostics = glx_diagnostics,
     .device_status = gl_device_status,
     .create_shader = gl_create_window_shader,
     .destroy_shader = gl_destroy_window_shader,

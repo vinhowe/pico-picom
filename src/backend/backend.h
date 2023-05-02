@@ -6,17 +6,13 @@
 #include <stdbool.h>
 
 #include "compiler.h"
-#include "config.h"
 #include "driver.h"
-#include "kernel.h"
 #include "region.h"
 #include "types.h"
 #include "x.h"
 
 typedef struct session session_t;
 struct managed_win;
-
-struct backend_shadow_context;
 
 struct ev_loop;
 struct backend_operations;
@@ -52,68 +48,16 @@ enum device_status {
 	DEVICE_STATUS_RESETTING,
 };
 
-// When image properties are actually applied to the image, they are applied in a
-// particular order:
-//
-// Corner radius -> Color inversion -> Dimming -> Opacity multiply -> Limit maximum
-// brightness
 enum image_properties {
-	// Whether the color of the image is inverted
-	// 1 boolean, default: false
-	IMAGE_PROPERTY_INVERTED,
-	// How much the image is dimmed
-	// 1 double, default: 0
-	IMAGE_PROPERTY_DIM_LEVEL,
-	// Image opacity, i.e. an alpha value multiplied to the alpha channel
-	// 1 double, default: 1
-	IMAGE_PROPERTY_OPACITY,
 	// The effective size of the image, the image will be tiled to fit.
 	// 2 int, default: the actual size of the image
 	IMAGE_PROPERTY_EFFECTIVE_SIZE,
-	// Limit how bright image can be. The image brightness is estimated by averaging
-	// the pixels in the image, and dimming will be applied to scale the average
-	// brightness down to the max brightness value.
-	// 1 double, default: 1
-	IMAGE_PROPERTY_MAX_BRIGHTNESS,
-	// Gives the image a rounded corner.
-	// 1 double, default: 0
-	IMAGE_PROPERTY_CORNER_RADIUS,
-	// Border width
-	// 1 int, default: 0
-	IMAGE_PROPERTY_BORDER_WIDTH,
-	// Custom shader for this window.
-	// 1 pointer to shader struct, default: NULL
-	IMAGE_PROPERTY_CUSTOM_SHADER,
-};
-
-enum image_operations {
-	// Multiply the alpha channel by the argument
-	IMAGE_OP_APPLY_ALPHA,
 };
 
 enum shader_attributes {
 	// Whether the shader needs to be render regardless of whether the window is
 	// updated.
 	SHADER_ATTRIBUTE_ANIMATED = 1,
-};
-
-struct gaussian_blur_args {
-	int size;
-	double deviation;
-};
-
-struct box_blur_args {
-	int size;
-};
-
-struct kernel_blur_args {
-	struct conv **kernels;
-	int kernel_count;
-};
-
-struct dual_kawase_blur_args {
-	int size;
-	int strength;
 };
 
 struct backend_operations {
@@ -126,17 +70,6 @@ struct backend_operations {
 	// TODO(yshui) make the target window a parameter
 	backend_t *(*init)(session_t *)attr_nonnull(1);
 	void (*deinit)(backend_t *backend_data) attr_nonnull(1);
-
-	/// Called when rendering will be stopped for an unknown amount of
-	/// time (e.g. when screen is unredirected). Free some resources.
-	///
-	/// Optional, not yet used
-	void (*pause)(backend_t *backend_data, session_t *ps);
-
-	/// Called before rendering is resumed
-	///
-	/// Optional, not yet used
-	void (*resume)(backend_t *backend_data, session_t *ps);
 
 	/// Called when root property changed, returns the new
 	/// backend_data. Even if the backend_data changed, all
@@ -153,6 +86,7 @@ struct backend_operations {
 	// the operation performed. OTOH reg_paint/reg_op is part of the parameters of the
 	// operation, and must be honored in order to complete the operation correctly.
 
+	// TODO(vinhowe): See if simplifying allows us to clean this up
 	// NOTE: due to complications introduced by use-damage and blur, the rendering API
 	// is a bit weird. The idea is, `compose` and `blur` have to update a temporary
 	// buffer, because `blur` requires data from an area slightly larger than the area
@@ -162,11 +96,6 @@ struct backend_operations {
 	// After rendering is done, `present` is called to update a portion of the actual
 	// back buffer, then present it to the target (or update the target directly,
 	// if not back buffered).
-
-	/// Called before when a new frame starts.
-	///
-	/// Optional
-	void (*prepare)(backend_t *backend_data, const region_t *reg_damage);
 
 	/**
 	 * Paint the content of an image onto the rendering buffer.
@@ -180,19 +109,10 @@ struct backend_operations {
 	 * @param reg_visible  the visible region, in target coordinates
 	 */
 	void (*compose)(backend_t *backend_data, void *image_data, coord_t image_dst,
-	                void *mask, coord_t mask_dst, const region_t *reg_paint,
-	                const region_t *reg_visible);
+	                const region_t *reg_paint, const region_t *reg_visible);
 
 	/// Fill rectangle of the rendering buffer, mostly for debug purposes, optional.
 	void (*fill)(backend_t *backend_data, struct color, const region_t *clip);
-
-	/// Blur a given region of the rendering buffer.
-	///
-	/// The blur is limited by `mask`. `mask_dst` specifies the top left corner of the
-	/// mask is.
-	bool (*blur)(backend_t *backend_data, double opacity, void *blur_ctx, void *mask,
-	             coord_t mask_dst, const region_t *reg_blur,
-	             const region_t *reg_visible) attr_nonnull(1, 3, 6, 7);
 
 	/// Update part of the back buffer with the rendering buffer, then present the
 	/// back buffer onto the target window (if not back buffered, update part of the
@@ -214,44 +134,6 @@ struct backend_operations {
 	 */
 	void *(*bind_pixmap)(backend_t *backend_data, xcb_pixmap_t pixmap,
 	                     struct xvisual_info fmt, bool owned);
-
-	/// Create a shadow context for rendering shadows with radius `radius`.
-	/// Default implementation: default_backend_create_shadow_context
-	struct backend_shadow_context *(*create_shadow_context)(backend_t *backend_data,
-	                                                        double radius);
-	/// Destroy a shadow context
-	/// Default implementation: default_backend_destroy_shadow_context
-	void (*destroy_shadow_context)(backend_t *backend_data,
-	                               struct backend_shadow_context *ctx);
-
-	/// Create a shadow image based on the parameters. Resulting image should have a
-	/// size of `width + radisu * 2` x `height + radius * 2`. Radius is set when the
-	/// shadow context is created.
-	/// Default implementation: default_backend_render_shadow
-	///
-	/// Required.
-	void *(*render_shadow)(backend_t *backend_data, int width, int height,
-	                       struct backend_shadow_context *ctx, struct color color);
-
-	/// Create a shadow by blurring a mask. `size` is the size of the blur. The
-	/// backend can use whichever blur method is the fastest. The shadow produced
-	/// shoule be consistent with `render_shadow`.
-	///
-	/// Optional.
-	void *(*shadow_from_mask)(backend_t *backend_data, void *mask,
-	                          struct backend_shadow_context *ctx, struct color color);
-
-	/// Create a mask image from region `reg`. This region can be used to create
-	/// shadow, or used as a mask for composing. When used as a mask, it should mask
-	/// out everything that is not inside the region used to create it.
-	///
-	/// Image properties might be set on masks too, at least the INVERTED and
-	/// CORNER_RADIUS properties must be supported. Inversion should invert the inside
-	/// and outside of the mask. Corner radius should exclude the corners from the
-	/// mask. Corner radius should be applied before the inversion.
-	///
-	/// Required.
-	void *(*make_mask)(backend_t *backend_data, geometry_t size, const region_t *reg);
 
 	// ============ Resource management ===========
 
@@ -315,48 +197,15 @@ struct backend_operations {
 	bool (*set_image_property)(backend_t *backend_data, enum image_properties prop,
 	                           void *image_data, void *args);
 
-	/**
-	 * Manipulate an image. Image properties are untouched.
-	 *
-	 * @param backend_data backend data
-	 * @param op           the operation to perform
-	 * @param image_data   an image data structure returned by the backend
-	 * @param reg_op       the clip region, define the part of the image to be
-	 *                     operated on.
-	 * @param reg_visible  define the part of the image that will eventually
-	 *                     be visible on target. this is a hint to the backend
-	 *                     for optimization purposes.
-	 * @param args         extra arguments, operation specific
-	 * @return whether the operation is successful
-	 */
-	bool (*image_op)(backend_t *backend_data, enum image_operations op, void *image_data,
-	                 const region_t *reg_op, const region_t *reg_visible, void *args);
-
 	/// Create another instance of the `image_data`. All `image_op` and
 	/// `set_image_property` calls on the returned image should not affect the
 	/// original image
 	void *(*clone_image)(backend_t *base, const void *image_data,
 	                     const region_t *reg_visible);
 
-	/// Create a blur context that can be used to call `blur`
-	void *(*create_blur_context)(backend_t *base, enum blur_method, void *args);
-	/// Destroy a blur context
-	void (*destroy_blur_context)(backend_t *base, void *ctx);
-	/// Get how many pixels outside of the blur area is needed for blur
-	void (*get_blur_size)(void *blur_context, int *width, int *height);
-
-	// ===========         Hooks        ============
-	/// Let the backend hook into the event handling queue
-	/// Not implemented yet
-	void (*set_ready_callback)(backend_t *, backend_ready_callback_t cb);
-	/// Called right after the core has handled its events.
-	/// Not implemented yet
-	void (*handle_events)(backend_t *);
 	// ===========         Misc         ============
 	/// Return the driver that is been used by the backend
 	enum driver (*detect_driver)(backend_t *backend_data);
-
-	void (*diagnostics)(backend_t *backend_data);
 
 	enum device_status (*device_status)(backend_t *backend_data);
 };

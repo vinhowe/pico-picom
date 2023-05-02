@@ -1,5 +1,12 @@
-picom
+pico-picom
 =====
+
+__pico-picom__ is a stripped-down, very unstable fork of [picom](https://github.com/yshui/picom).
+
+---
+
+picom
+====
 
 __picom__ is a compositor for X, and a [fork of Compton](History.md).
 
